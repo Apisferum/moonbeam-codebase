@@ -1,0 +1,262 @@
+To generate a Happy EMOPIA track:
+python recipes/inference/custom_music_generation/multi_task_generate.py \
+  --ckpt_dir /path/to/moonbeam_839M.pt \
+  --lora_dir /path/to/multi_task_lora/epoch_9 \
+  --active_adapter emopia_lora \
+  --task_type emopia \
+  --model_config_path src/llama_recipes/configs/model_config_multi_task.json \
+  --additional_token_dict_path processed/ComMU/indexed_tokens_dict.json \
+  --output_midi happy_emopia_generation.mid
+  
+To generate an Epic SLakh Orchestral track:
+  python recipes/inference/custom_music_generation/multi_task_generate.py \
+  --ckpt_dir /path/to/moonbeam_839M.pt \
+  --lora_dir /path/to/multi_task_lora/epoch_9 \
+  --active_adapter slakh_lora \
+  --task_type slakh \
+  --model_config_path src/llama_recipes/configs/model_config_multi_task.json \
+  --additional_token_dict_path processed/ComMU/indexed_tokens_dict.json \
+  --output_midi epic_slakh_orchestra.mid
+
+
+  torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation False \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/moonbeam_839M.pt \
+  --pure_bf16 True \
+  --enable_ddp False \
+  --use_peft True \
+  --peft_method lora \
+  --quantization True \
+  --model_name multi_task \
+  --dataset multi_task_dataset \
+  --output_dir /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --batch_size_training 1 \
+  --gradient_accumulation_steps 8 \
+  --context_length 1024 \
+  --num_epochs 10 \
+  --use_wandb False
+
+# Enable PyTorch's memory fragmentation fix
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation True \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/moonbeam_839M.pt \
+  --pure_bf16 True \
+  --enable_ddp False \
+  --use_peft True \
+  --peft_method lora \
+  --quantization True \
+  --model_name multi_task \
+  --dataset multi_task_dataset \
+  --output_dir /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --batch_size_training 1 \
+  --gradient_accumulation_steps 8 \
+  --context_length 1024 \
+  --num_epochs 10 \
+  --use_wandb False
+
+  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+#Dry Run (Crucial!)
+# 1. Start a tmux session (Always do this first!)
+tmux new -s dry_run_test
+
+# 2. Enable PyTorch memory optimization
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# 3. Run the Dry Run (1 Epoch, Max 10 Steps)
+torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation False \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /path/to/college/dir/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /path/to/college/dir/moonbeam_839M.pt \
+  --pure_bf16 True \
+  --enable_ddp False \
+  --use_peft True \
+  --peft_method lora \
+  --quantization True \
+  --model_name multi_task \
+  --dataset multi_task_dataset \
+  --output_dir /path/to/college/dir/multi_task_lora \
+  --batch_size_training 1 \
+  --gradient_accumulation_steps 8 \
+  --context_length 1024 \
+  --num_epochs 1 \
+  --max_train_step 10 \
+  --use_wandb False
+
+  (⚠️ Note: If the fire library throws an unrecognized argument: max_train_step error, simply delete the --max_train_step 10 \ line and run it again. It will just run for 1 full epoch, which will take about 10-15 minutes on a college GPU—still a perfectly fine dry run!)
+
+# Enable PyTorch's memory fragmentation fix (always good practice)
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation False \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /path/to/your/college/directory/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /path/to/your/college/directory/moonbeam_839M.pt \
+  --pure_bf16 True \
+  --enable_ddp False \
+  --use_peft True \
+  --peft_method lora \
+  --quantization True \
+  --model_name multi_task \
+  --dataset multi_task_dataset \
+  --output_dir /path/to/your/college/directory/multi_task_lora \
+  --batch_size_training 1 \
+  --gradient_accumulation_steps 8 \
+  --context_length 1024 \
+  --num_epochs 10 \
+  --use_wandb False
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 --run_validation False --save_metrics True \
+  --dist_checkpoint_root_folder /path/to/college/dir/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /path/to/college/dir/moonbeam_839M.pt \
+  --pure_bf16 True --enable_ddp False --use_peft True --peft_method lora --quantization True \
+  --model_name multi_task --dataset multi_task_dataset \
+  --output_dir /path/to/college/dir/multi_task_lora \
+  --batch_size_training 1 --gradient_accumulation_steps 8 --context_length 1024 --num_epochs 10 --use_wandb False
+
+
+watch -n 1 nvidia-smi
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export TORCH_CUDNN_SDPA_ENABLED=0
+
+# 2. Verify they're set
+echo $PYTORCH_CUDA_ALLOC_CONF
+echo $TORCH_CUDNN_SDPA_ENABLED
+
+
+--validation_interval 2000
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+WANDB_API_KEY="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" torchrun --nnodes 1 --nproc_per_node 1 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation True \
+  --num_workers_dataloader 4 \
+  --validation_interval 2000 \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/moonbeam_839M.pt \
+  --pure_bf16 True --enable_ddp False --use_peft True --peft_method lora --quantization True \
+  --model_name multi_task --dataset multi_task_dataset \
+  --output_dir /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/moonbeam_checkpoint/multi_task_lora \
+  --batch_size_training 1 --gradient_accumulation_steps 8 --context_length 1024 --num_epochs 10 --use_wandb False
+
+  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# Notice --nproc_per_node 2 (Uses 2 GPUs)
+# Notice --enable_ddp True
+# Notice --enable_fsdp False
+torchrun --nnodes 1 --nproc_per_node 2 recipes/finetuning/real_finetuning_multi_task.py \
+  --lr 2e-4 \
+  --run_validation True \
+  --validation_interval 2000 \
+  --save_metrics True \
+  --dist_checkpoint_root_folder /path/to/college/dir/multi_task_lora \
+  --dist_checkpoint_folder ddp \
+  --trained_checkpoint_path /path/to/college/dir/moonbeam_839M.pt \
+  --pure_bf16 True \
+  --enable_ddp True \
+  --enable_fsdp False \
+  --use_peft True --peft_method lora --quantization True \
+  --model_name multi_task --dataset multi_task_dataset \
+  --output_dir /path/to/college/dir/multi_task_lora \
+  --batch_size_training 1 --gradient_accumulation_steps 8 --context_length 1024 --num_epochs 10 --use_wandb False \
+  --num_workers_dataloader 4
+
+  !torchrun --nnodes 1 --nproc_per_node 2 recipes/finetuning/real_finetuning_con_gen.py \
+--lr 3e-4 \
+--val_batch_size 4 \
+--run_validation True \
+--validation_interval 50 \
+--save_metrics True \
+--dist_checkpoint_root_folder /kaggle/working/moonbeam_lora_commu \
+--dist_checkpoint_folder ddp \
+--trained_checkpoint_path /kaggle/input/moonbeam-pretrained/moonbeam_839M.pt \
+--pure_bf16 True \
+--enable_ddp True \
+--use_peft True \
+--peft_method lora \
+--quantization False \
+--model_name commu_con_gen \
+--dataset commu_con_gen_dataset \
+--output_dir /kaggle/working/moonbeam_lora_commu \
+--batch_size_training 4 \
+--gradient_accumulation_steps 4 \
+--context_length 848 \
+--num_epochs 25 \
+--use_wandb True
+
+%%bash
+cd /kaggle/input/moonbeam-codebase
+
+torchrun --nnodes 1 --nproc_per_node 2 recipes/finetuning/real_finetuning_multi_task.py \
+--lr 2e-4 \
+--run_validation True \
+--validation_interval 500 \
+--save_metrics True \
+--dist_checkpoint_root_folder /kaggle/working/moonbeam_multi_task \
+--dist_checkpoint_folder ddp \
+--trained_checkpoint_path /kaggle/input/moonbeam-pretrained/moonbeam_839M.pt \
+--pure_bf16 True \
+--enable_ddp True \
+--use_peft True \
+--peft_method lora \
+--quantization False \
+--model_name multi_task \
+--dataset multi_task_dataset \
+--output_dir /kaggle/working/moonbeam_multi_task \
+--batch_size_training 4 \
+--gradient_accumulation_steps 1 \
+--context_length 848 \
+--num_epochs 5 \
+--use_wandb True \
+--gamma 0.99
+
+##Final
+
+!cd /kaggle/working/moonbeam-codebase && \
+  PYTHONPATH=/kaggle/working/moonbeam-codebase/src:/kaggle/working/moonbeam-codebase/src/llama_recipes/transformers_minimal/src:$PYTHONPATH \
+  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+  torchrun --nnodes 1 --nproc_per_node 2 \
+    recipes/finetuning/real_finetuning_multi_task.py \
+    --lr 2e-4 \
+    --run_validation True \
+    --num_workers_dataloader 4 \
+    --validation_interval 4907 \
+    --save_metrics True \
+    --dist_checkpoint_root_folder /kaggle/working/moonbeam_multi_task \
+    --dist_checkpoint_folder ddp \
+    --trained_checkpoint_path /kaggle/input/datasets/aashishbishowkarma/moonbeam-pretrained/moonbeam_839M.pt \
+    --pure_bf16 True \
+    --enable_ddp True \
+    --use_peft True \
+    --peft_method lora \
+    --quantization False \
+    --batching_strategy padding \
+    --model_name multi_task \
+    --dataset multi_task_dataset \
+    --output_dir /kaggle/working/moonbeam_multi_task \
+    --batch_size_training 2 \
+    --gradient_accumulation_steps 2 \
+    --context_length 1024 \
+    --num_epochs 1 \
+    --use_wandb True \
+    --gamma 0.99
