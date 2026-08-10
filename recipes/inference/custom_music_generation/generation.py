@@ -463,6 +463,16 @@ class MusicLlama:
         for i, condition_token_length in enumerate(condition_token_lengths):
             out_tokens_no_cond_tokens.append(out_tokens[i][condition_token_length:])
 
+        # Explicit memory cleanup
+        try:
+            del past_key_values, output, tokens, input_mask, eos_reached
+        except NameError:
+            pass
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return (out_tokens_no_cond_tokens, out_logprobs if logprobs else None)
 
     def music_completion(self, prompt_tokens, bpm_condition, time_signature_condition, num_measures_condition,
