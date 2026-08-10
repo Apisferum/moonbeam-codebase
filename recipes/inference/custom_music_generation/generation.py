@@ -266,21 +266,18 @@ class MusicLlama:
                 hidden_state = output_decoder.generation_hidden_state
 
                 sample_indices = list(getattr(self.tokenizer, attribute).keys())
-                sample_indices_set = set(sample_indices)
+                sample_indices_tensor = torch.tensor(sample_indices, device=self.device)
                 if temperature > 0:
-                    probs = torch.softmax(generation_logits[:, -1, :] / temperature, dim=-1)
+                    # Constrained decoding: mask out invalid tokens in logit space directly.
+                    # This ensures the model only samples valid tokens from the very beginning,
+                    # eliminating the extremely slow 15-second loop timeout per attribute.
+                    logits = generation_logits[:, -1, :] / temperature
+                    mask = torch.full_like(logits, float('-inf'))
+                    mask[:, sample_indices_tensor] = logits[:, sample_indices_tensor]
+                    probs = torch.softmax(mask, dim=-1)
                     next_decoder_token = sample_top_p(probs, top_p)
-                    for i in range(next_decoder_token.size(0)):
-                        start_time = time.time()
-                        while next_decoder_token[i, 0].item() not in sample_indices_set:
-                            if time.time() - start_time > 15:
-                                mask = torch.full_like(probs, float('-inf'))
-                                mask[:, sample_indices] = probs[:, sample_indices]
-                                probs = torch.softmax(mask, dim=-1)
-                            next_decoder_token[i, 0] = sample_top_p(probs, top_p)[i, 0]
                 else:
                     probs = torch.softmax(generation_logits[:, -1, :], dim=-1)
-                    sample_indices_tensor = torch.tensor(sample_indices, device=self.device)
                     probs_at_sample_indices = probs[:, sample_indices_tensor]
                     next_token_index_in_subset = probs_at_sample_indices.argmax(dim=-1, keepdim=True)
                     next_decoder_token = sample_indices_tensor[next_token_index_in_subset.squeeze(-1)].unsqueeze(-1)
