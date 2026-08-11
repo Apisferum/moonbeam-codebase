@@ -158,6 +158,13 @@ class MusicLlama:
         except StopIteration:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # 🛡️ BRUTE-FORCE DEVICE SYNC (Safety Net for PEFT/Rust TIES custom layers)
+        import torch.nn as nn
+        for module in self.model.modules():
+            if isinstance(module, nn.Embedding):
+                if module.weight.device != self.device:
+                    module.to(self.device)
+
     @torch.inference_mode()
     def generate(
         self, prompt_tokens: List[List[List[int]]], bpm_condition: List[int], time_signature_condition: List[str],
@@ -396,8 +403,9 @@ class MusicLlama:
                 next_decoder_token_lang = next_decoder_token_lang.to(self.device)
 
             previous_onset = tokens[:, cur_pos-1, 0]
-            if any(previous_onset < 0):
-                previous_onset = torch.where(previous_onset < 0, torch.zeros_like(previous_onset), previous_onset)
+            # 🚀 FIX: Eliminate `any()` which triggers a GPU-CPU sync stall. 
+            # torch.where evaluates the mask entirely on the GPU without blocking.
+            previous_onset = torch.where(previous_onset < 0, torch.zeros_like(previous_onset), previous_onset)
             new_onset = previous_onset + next_decoder_token_lang.clone().detach()[:, -1, 0]
             next_decoder_token_onset = torch.cat([new_onset.unsqueeze(-1), next_decoder_token_lang.clone().detach()[:, -1, 1:]], dim=-1).to(tokens)
             next_token = torch.where(input_mask[:, cur_pos], tokens[:, cur_pos], next_decoder_token_onset)
@@ -526,8 +534,11 @@ def sample_top_p(probs, p):
 
 def onset2bar_beat_chord(onsets, chord_condition, time_signature_condition, bpm_condition, num_measures_condition, chord_dict):
     output = []
-    for i in range(onsets.size(0)):
-        onset_abs = onsets[i].item()
+    # 🚀 FIX: Move to CPU ONCE to prevent GPU stream sync stalls inside the autoregressive loop
+    onsets_list = onsets.cpu().tolist() if torch.is_tensor(onsets) else onsets
+    
+    for i in range(len(onsets_list)):
+        onset_abs = onsets_list[i]
         numerator, denominator = int(time_signature_condition[i].split("/")[0]), int(time_signature_condition[i].split("/")[1])
         bpm = bpm_condition[i]
         chords = chord_condition[i] if num_measures_condition[i] % 4 == 0 else ["s"]*8 + chord_condition[i]
