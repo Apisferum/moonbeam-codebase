@@ -2272,33 +2272,41 @@ class LlamaForCausalLM_Conditional_Generation(LlamaPreTrainedModel):
                     
                     metadata_condition_shrinked = self.gru_condition_layer(metadata_condition_embedded_single).unsqueeze(1) #(len, 11*dim) --> (len, dim) --> len, 1, dim
                     metadata_condition_list.append(metadata_condition_shrinked)
-                if self.if_add_chord_in_decoder:
-                    # --- CRITICAL FIX: PREVENT GPU STALLS IN CHORD LOOP ---
-                    # Move the slice to CPU RAM ONCE before the loop
-                    bbc_slice_cpu = bar_beat_chord_condition[batch_idx, : seq_indices_eos - seq_indices_sos].detach().cpu()
+            if self.if_add_chord_in_decoder:
+                bbc_slice = bar_beat_chord_condition[batch_idx, : seq_indices_eos - seq_indices_sos]
+                bar_OH = F.one_hot(bbc_slice[:, 0].long(), num_classes=self.bar_classes).to(input_ids)
+                beat_OH = F.one_hot(bbc_slice[:, 1].long(), num_classes=self.beat_classes).to(input_ids)
+                
+                # 🚀 GOD-TIER VECTORIZATION: Eliminate the Python for-loop over chords
+                chord_indices = bbc_slice[:, 2].long()
+                unique_chords = torch.unique(chord_indices)
+                
+                chord_embed_map = {}
+                zero_tensor_gpu = torch.tensor([0], device=input_ids.device)
+                if self.chord_placeholder_embedding.weight.device != zero_tensor_gpu.device:
+                    self.chord_placeholder_embedding.to(zero_tensor_gpu.device)
                     
-                    bar_OH = F.one_hot(bbc_slice_cpu[:, 0].long(), num_classes=self.bar_classes).to(input_ids)
-                    beat_OH = F.one_hot(bbc_slice_cpu[:, 1].long(), num_classes=self.beat_classes).to(input_ids)
+                for c_idx in unique_chords:
+                    c_val = c_idx.item()
+                    chord_sym = self.chord_idx2symbol[c_val]
+                    if chord_sym != "s":
+                        midi_pitches = self._chord_midi_cache[chord_sym].to(input_ids.device)
+                        emb = self.model.pitch_embedding(midi_pitches.unsqueeze(0)).sum(dim=1).squeeze(0)
+                    else:
+                        emb = self.chord_placeholder_embedding(zero_tensor_gpu).squeeze(0)
+                    chord_embed_map[c_val] = emb
                     
-                    chord_condition = []
-                    # Pre-allocate the zero tensor on GPU to avoid recreating it in the loop
-                    zero_tensor_gpu = torch.tensor([0], device=input_ids.device)
+                max_idx = int(chord_indices.max().item()) + 1
+                embed_dim = list(chord_embed_map.values())[0].shape[-1]
+                lookup_table = torch.zeros(max_idx, embed_dim, device=input_ids.device, dtype=input_ids.dtype)
+                for c_val, emb in chord_embed_map.items():
+                    lookup_table[c_val] = emb
                     
-                    for chord_idx in bbc_slice_cpu[:, 2]:
-                        chord = self.chord_idx2symbol[chord_idx.item()]
-                        if chord != "s":
-                            # Instant GPU tensor lookup! Zero music21 overhead!
-                            midi_pitches = self._chord_midi_cache[chord].to(input_ids.device)
-                            embedded_pitches = self.model.pitch_embedding(midi_pitches.unsqueeze(0))
-                            chord_condition.append(embedded_pitches.sum(dim=1))
-                        else:
-                            chord_condition.append(self.chord_placeholder_embedding(zero_tensor_gpu))
-                    # --------------------------------------------------------
-                    chord_condition_cat = torch.cat(chord_condition, dim = 0) # (len, dim)
-                    bar_beat_chord_condition_cat = torch.cat([bar_OH, beat_OH, chord_condition_cat], dim = -1)
-                    bar_beat_chord_condition_cat_linear = self.chord_condition_layer(bar_beat_chord_condition_cat).unsqueeze(1)
-
-                    bar_beat_chord_condition_list.append(bar_beat_chord_condition_cat_linear)
+                chord_condition_cat = lookup_table[chord_indices]
+                
+                bar_beat_chord_condition_cat = torch.cat([bar_OH, beat_OH, chord_condition_cat], dim = -1)
+                bar_beat_chord_condition_cat_linear = self.chord_condition_layer(bar_beat_chord_condition_cat).unsqueeze(1)
+                bar_beat_chord_condition_list.append(bar_beat_chord_condition_cat_linear)
 
                 logits_list.append(logits_between_sos_eos)
                 labels_list.append(labels_between_sos_eos)
@@ -2381,32 +2389,44 @@ class LlamaForCausalLM_Conditional_Generation(LlamaPreTrainedModel):
                     metadata_condition_shrinked = self.gru_condition_layer(metadata_condition) 
                     decoder_input = decoder_input+metadata_condition_shrinked
                 if self.if_add_chord_in_decoder:
-                    # bar_beat_chord_condition: batch*len, 3 --> batch*len, 1, dim
-                    bar_OH = F.one_hot(bar_beat_chord_condition[:, 0].long(), num_classes=self.bar_classes).to(decoded_language_tokens) # 🚀 FIX: input_ids is None during inference, use decoded_language_tokens
-                    beat_OH = F.one_hot(bar_beat_chord_condition[:, 1].long(), num_classes=self.beat_classes).to(decoded_language_tokens) # 🚀 FIX: input_ids is None during inference
-                    # --- INFERENCE OPTIMIZATION: CPU SLICE & CACHE LOOKUP ---
-                    bbc_slice_cpu = bar_beat_chord_condition[:, 2].detach().cpu()
-                    zero_tensor_gpu = torch.tensor([0], device=decoded_language_tokens.device) # 🚀 FIX: input_ids.device crashes if input_ids is None
+                    bar_OH = F.one_hot(bar_beat_chord_condition[:, 0].long(), num_classes=self.bar_classes).to(decoded_language_tokens)
+                    beat_OH = F.one_hot(bar_beat_chord_condition[:, 1].long(), num_classes=self.beat_classes).to(decoded_language_tokens)
                     
-                    chord_condition = []
-                    for chord_idx in bbc_slice_cpu:
-                        chord = self.chord_idx2symbol[chord_idx.item()]
-                        if chord != "s":
-                            # Instant GPU tensor lookup! Zero music21 overhead!
-                            midi_pitches = self._chord_midi_cache[chord].to(decoded_language_tokens.device)
-                            embedded_pitches = self.model.pitch_embedding(midi_pitches.unsqueeze(0))
-                            chord_condition.append(embedded_pitches.sum(dim=1))
-                    else:
-                        # 🛠️ DEVICE SYNC FIX: Force placeholder embedding to input device
-                        if self.chord_placeholder_embedding.weight.device != zero_tensor_gpu.device:
-                            self.chord_placeholder_embedding.to(zero_tensor_gpu.device)
-                        chord_condition.append(self.chord_placeholder_embedding(zero_tensor_gpu))
-                    # --------------------------------------------------------
+                    # 🚀 GOD-TIER VECTORIZATION: Eliminate the Python for-loop over chords
+                    # This was launching hundreds of tiny GPU kernels during primer injection, causing massive latency.
+                    chord_indices = bar_beat_chord_condition[:, 2].long()
+                    unique_chords = torch.unique(chord_indices)
                     
-                    chord_condition_cat = torch.cat(chord_condition, dim = 0) # (batch*len, dim)
+                    chord_embed_map = {}
+                    zero_tensor_gpu = torch.tensor([0], device=decoded_language_tokens.device)
+                    
+                    # Ensure placeholder is on correct device
+                    if self.chord_placeholder_embedding.weight.device != zero_tensor_gpu.device:
+                        self.chord_placeholder_embedding.to(zero_tensor_gpu.device)
+                        
+                    # 1. Compute embeddings ONLY for unique chords in this sequence
+                    for c_idx in unique_chords:
+                        c_val = c_idx.item()
+                        chord_sym = self.chord_idx2symbol[c_val]
+                        if chord_sym != "s":
+                            midi_pitches = self._chord_midi_cache[chord_sym].to(decoded_language_tokens.device)
+                            emb = self.model.pitch_embedding(midi_pitches.unsqueeze(0)).sum(dim=1).squeeze(0)
+                        else:
+                            emb = self.chord_placeholder_embedding(zero_tensor_gpu).squeeze(0)
+                        chord_embed_map[c_val] = emb
+                        
+                    # 2. Build a dense lookup table and index it in pure PyTorch (O(1) kernel launch)
+                    max_idx = int(chord_indices.max().item()) + 1
+                    embed_dim = list(chord_embed_map.values())[0].shape[-1]
+                    lookup_table = torch.zeros(max_idx, embed_dim, device=decoded_language_tokens.device, dtype=decoded_language_tokens.dtype)
+                    for c_val, emb in chord_embed_map.items():
+                        lookup_table[c_val] = emb
+                        
+                    chord_condition_cat = lookup_table[chord_indices]
+                    
                     bar_beat_chord_condition_cat = torch.cat([bar_OH, beat_OH, chord_condition_cat], dim = -1)
                     bar_beat_chord_condition_cat_linear = self.chord_condition_layer(bar_beat_chord_condition_cat).unsqueeze(1)
-                    decoder_input = decoder_input+bar_beat_chord_condition_cat_linear
+                    decoder_input = decoder_input + bar_beat_chord_condition_cat_linear
 
                 generation_logits_flattened, generation_hidden_state_flattened = self.decoder(decoder_input, decoded_hidden_state) #output: batch*len_x, len_y, dim ,  hidden state: num_layers, batch*len_x, dim
                 

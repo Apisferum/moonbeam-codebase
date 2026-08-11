@@ -158,6 +158,13 @@ class MusicLlama:
         except StopIteration:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        # 🛡️ BRUTE-FORCE DEVICE SYNC (Safety Net for PEFT/Rust TIES custom layers)
+        import torch.nn as nn
+        for module in self.model.modules():
+            if isinstance(module, nn.Embedding):
+                if module.weight.device != self.device:
+                    module.to(self.device)
+
     @torch.inference_mode()
     def generate(
         self, prompt_tokens: List[List[List[int]]], bpm_condition: List[int], time_signature_condition: List[str],
@@ -266,21 +273,18 @@ class MusicLlama:
                 hidden_state = output_decoder.generation_hidden_state
 
                 sample_indices = list(getattr(self.tokenizer, attribute).keys())
-                sample_indices_set = set(sample_indices)
+                sample_indices_tensor = torch.tensor(sample_indices, device=self.device)
                 if temperature > 0:
-                    probs = torch.softmax(generation_logits[:, -1, :] / temperature, dim=-1)
+                    # Constrained decoding: mask out invalid tokens in logit space directly.
+                    # This ensures the model only samples valid tokens from the very beginning,
+                    # eliminating the extremely slow 15-second loop timeout per attribute.
+                    logits = generation_logits[:, -1, :] / temperature
+                    mask = torch.full_like(logits, float('-inf'))
+                    mask[:, sample_indices_tensor] = logits[:, sample_indices_tensor]
+                    probs = torch.softmax(mask, dim=-1)
                     next_decoder_token = sample_top_p(probs, top_p)
-                    for i in range(next_decoder_token.size(0)):
-                        start_time = time.time()
-                        while next_decoder_token[i, 0].item() not in sample_indices_set:
-                            if time.time() - start_time > 15:
-                                mask = torch.full_like(probs, float('-inf'))
-                                mask[:, sample_indices] = probs[:, sample_indices]
-                                probs = torch.softmax(mask, dim=-1)
-                            next_decoder_token[i, 0] = sample_top_p(probs, top_p)[i, 0]
                 else:
                     probs = torch.softmax(generation_logits[:, -1, :], dim=-1)
-                    sample_indices_tensor = torch.tensor(sample_indices, device=self.device)
                     probs_at_sample_indices = probs[:, sample_indices_tensor]
                     next_token_index_in_subset = probs_at_sample_indices.argmax(dim=-1, keepdim=True)
                     next_decoder_token = sample_indices_tensor[next_token_index_in_subset.squeeze(-1)].unsqueeze(-1)
@@ -399,8 +403,9 @@ class MusicLlama:
                 next_decoder_token_lang = next_decoder_token_lang.to(self.device)
 
             previous_onset = tokens[:, cur_pos-1, 0]
-            if any(previous_onset < 0):
-                previous_onset = torch.where(previous_onset < 0, torch.zeros_like(previous_onset), previous_onset)
+            # 🚀 FIX: Eliminate `any()` which triggers a GPU-CPU sync stall. 
+            # torch.where evaluates the mask entirely on the GPU without blocking.
+            previous_onset = torch.where(previous_onset < 0, torch.zeros_like(previous_onset), previous_onset)
             new_onset = previous_onset + next_decoder_token_lang.clone().detach()[:, -1, 0]
             next_decoder_token_onset = torch.cat([new_onset.unsqueeze(-1), next_decoder_token_lang.clone().detach()[:, -1, 1:]], dim=-1).to(tokens)
             next_token = torch.where(input_mask[:, cur_pos], tokens[:, cur_pos], next_decoder_token_onset)
@@ -466,6 +471,16 @@ class MusicLlama:
         for i, condition_token_length in enumerate(condition_token_lengths):
             out_tokens_no_cond_tokens.append(out_tokens[i][condition_token_length:])
 
+        # Explicit memory cleanup
+        try:
+            del past_key_values, output, tokens, input_mask, eos_reached
+        except NameError:
+            pass
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         return (out_tokens_no_cond_tokens, out_logprobs if logprobs else None)
 
     def music_completion(self, prompt_tokens, bpm_condition, time_signature_condition, num_measures_condition,
@@ -519,8 +534,11 @@ def sample_top_p(probs, p):
 
 def onset2bar_beat_chord(onsets, chord_condition, time_signature_condition, bpm_condition, num_measures_condition, chord_dict):
     output = []
-    for i in range(onsets.size(0)):
-        onset_abs = onsets[i].item()
+    # 🚀 FIX: Move to CPU ONCE to prevent GPU stream sync stalls inside the autoregressive loop
+    onsets_list = onsets.cpu().tolist() if torch.is_tensor(onsets) else onsets
+    
+    for i in range(len(onsets_list)):
+        onset_abs = onsets_list[i]
         numerator, denominator = int(time_signature_condition[i].split("/")[0]), int(time_signature_condition[i].split("/")[1])
         bpm = bpm_condition[i]
         chords = chord_condition[i] if num_measures_condition[i] % 4 == 0 else ["s"]*8 + chord_condition[i]
