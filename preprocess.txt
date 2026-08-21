@@ -1,0 +1,24 @@
+#ComMU Datasets
+python data_preprocess.py \
+  --dataset_name commu_con_gen \
+  --dataset_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/datasets/ComMU/dataset/commu_midi/commu_midi \
+  --output_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/processed/ComMU \
+  --model_config /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/src/llama_recipes/configs/model_config.json \
+  --train_test_split_file /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/datasets/ComMU/dataset/commu_meta.csv
+
+#EMOPIA2.2 Datasets
+python emopia_data_preprocess.py \
+  --dataset_name emopia \
+  --dataset_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/datasets/emopia2.2/midis \
+  --output_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/processed/EMOPIA2.2 \
+  --model_config /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/src/llama_recipes/configs/model_config.json \
+  --train_test_split_file /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/datasets/emopia2.2/split \
+  --train_ratio 1 \
+  --ts_threshold 1024
+
+#SLAKH2100 Datasets
+python slakh_data_preprocess.py \
+  --dataset_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/datasets/slakh2100_midi_only_redux \
+  --output_folder /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/processed/SLAKH2100 \
+  --master_dict /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/processed/ComMU/indexed_tokens_dict.json \
+  --model_config /home/aashishbishow/moon/Moonbeam-MIDI-Foundation-Model/src/llama_recipes/configs/model_config.json
