@@ -22,12 +22,29 @@ from .utils.versions import require_version, require_version_core
 # order specific notes:
 # - tqdm must be checked before tokenizers
 
-pkgs_to_check_at_runtime = []
+pkgs_to_check_at_runtime = [
+    "python",
+    "tqdm",
+    "regex",
+    "requests",
+    "packaging",
+    "filelock",
+    "numpy",
+    "tokenizers",
+    "huggingface-hub",
+    "safetensors",
+    "accelerate",
+    "pyyaml",
+]
 
 for pkg in pkgs_to_check_at_runtime:
     if pkg in deps:
         if pkg == "tokenizers":
-            continue  # bypass check for tokenizers version
+            # must be loaded here, or else tqdm check may fail
+            from .utils import is_tokenizers_available
+
+            if not is_tokenizers_available():
+                continue  # not required, check version only if installed
         elif pkg == "accelerate":
             # must be loaded here, or else tqdm check may fail
             from .utils import is_accelerate_available

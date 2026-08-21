@@ -33,7 +33,7 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/llama_recipes", "src", "recipes"]
+packages = ["src/llama_recipes", "src"]
 
 [tool.hatch.metadata.hooks.requirements_txt]
 files = ["requirements.txt"]
