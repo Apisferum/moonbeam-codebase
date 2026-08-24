@@ -206,7 +206,7 @@ class MusicLlama:
 
         past_key_values = None
         for cur_pos in range(min_prompt_len, total_len):
-            output = self.model.forward(input_ids=tokens[:, prev_pos:cur_pos], past_key_values=past_key_values, use_cache=True, attention_mask=None)
+            output = self.model.forward(input_ids=tokens[:, :cur_pos], past_key_values=None, use_cache=False, attention_mask=None)
             next_decoder_token = torch.tensor(self.tokenizer.sos_out, device=self.device).to(tokens).expand(tokens.shape[0]*(cur_pos - prev_pos), 1)
             next_decoder_token_out = next_decoder_token
             hidden_state = output.logits.view(output.logits.shape[0]*output.logits.shape[1], output.logits.shape[2]).unsqueeze(0).expand(self.model.decoder.num_hidden_layers, -1, -1).contiguous()
