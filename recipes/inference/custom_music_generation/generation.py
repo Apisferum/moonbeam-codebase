@@ -171,7 +171,8 @@ class MusicLlama:
         num_measures_condition: List[int], max_gen_len: int, temperature: float = 0.6, top_p: float = 0.9,
         logprobs: bool = False, echo: bool = False, metadata_condition: List = None, chord_condition: List = None,
         condition_token_lengths: List[int] = None, chord_dict: str = None, forced_token_streams: Optional[List[deque]] = None,
-    ) -> Tuple[List[List[int]], Optional[List[List[float]]]]:
+        past_key_values: Optional[Tuple] = None,
+    ) -> Tuple[List[List[int]], Optional[List[List[float]]], Optional[Tuple]]:
         
         bsz = len(prompt_tokens)
         if forced_token_streams is not None and len(forced_token_streams) != bsz:
@@ -204,7 +205,7 @@ class MusicLlama:
         eos_reached = torch.tensor([False] * bsz, device=self.device)
         input_mask = torch.all(tokens != pad_tensor, dim=-1).unsqueeze(-1)
 
-        past_key_values = None
+        # Use provided past_key_values
         for cur_pos in range(min_prompt_len, total_len):
             output = self.model.forward(input_ids=tokens[:, prev_pos:cur_pos], past_key_values=past_key_values, use_cache=True, attention_mask=None)
             next_decoder_token = torch.tensor(self.tokenizer.sos_out, device=self.device).to(tokens).expand(tokens.shape[0]*(cur_pos - prev_pos), 1)
@@ -473,7 +474,7 @@ class MusicLlama:
 
         # Explicit memory cleanup
         try:
-            del past_key_values, output, tokens, input_mask, eos_reached
+            del output, tokens, input_mask, eos_reached
         except NameError:
             pass
         import gc
@@ -481,19 +482,20 @@ class MusicLlama:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        return (out_tokens_no_cond_tokens, out_logprobs if logprobs else None)
+        return (out_tokens_no_cond_tokens, out_logprobs if logprobs else None, past_key_values)
 
     def music_completion(self, prompt_tokens, bpm_condition, time_signature_condition, num_measures_condition,
                          metadata_condition=None, chord_condition=None, temperature=0.6, top_p=0.9, max_gen_len=None,
                          logprobs=False, condition_token_lengths=None, chord_token_indices=None, chord_dict=None,
-                         if_return_chords=True, forced_token_streams=None):
+                         if_return_chords=True, forced_token_streams=None, past_key_values=None):
         if max_gen_len is None: max_gen_len = self.config.max_len - 1
 
-        generation_tokens, generation_logprobs = self.generate(
+        generation_tokens, generation_logprobs, out_kv = self.generate(
             prompt_tokens=prompt_tokens, bpm_condition=bpm_condition, time_signature_condition=time_signature_condition,
             num_measures_condition=num_measures_condition, metadata_condition=metadata_condition, chord_condition=chord_condition,
             max_gen_len=max_gen_len, temperature=temperature, top_p=top_p, logprobs=logprobs, echo=True,
             condition_token_lengths=condition_token_lengths, chord_dict=chord_dict, forced_token_streams=forced_token_streams,
+            past_key_values=past_key_values,
         )
         
         # Sanitize tokens to prevent MIDI out-of-range/channel crashes
@@ -503,9 +505,13 @@ class MusicLlama:
         generation_tokens_post_proc = [self.postprocess_split(t) if len(set(row[4] for row in t)) > 15 else [t] for t in generation_tokens]
 
         if if_return_chords:
-            return [{"generation": {"role": "assistant", "content": self.tokenizer.compound_to_midi_multi(t), "chord": self.tokenizer.compound_to_midi_multi([chord]), "tokens": t, "chord_tokens": [chord]}} for chord, t in zip(chord_tokens, generation_tokens_post_proc)]
+            res = [{"generation": {"role": "assistant", "content": self.tokenizer.compound_to_midi_multi(t), "chord": self.tokenizer.compound_to_midi_multi([chord]), "tokens": t, "chord_tokens": [chord]}} for chord, t in zip(chord_tokens, generation_tokens_post_proc)]
         else:
-            return [{"generation": {"role": "assistant", "content": self.tokenizer.compound_to_midi_multi(t), "chord": None, "tokens": t, "chord_tokens": None}} for t in generation_tokens_post_proc]
+            res = [{"generation": {"role": "assistant", "content": self.tokenizer.compound_to_midi_multi(t), "chord": None, "tokens": t, "chord_tokens": None}} for t in generation_tokens_post_proc]
+
+        for item in res:
+            item["past_key_values"] = out_kv
+        return res
 
     @staticmethod
     def postprocess_split(tokens):
