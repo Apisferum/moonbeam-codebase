@@ -45,9 +45,14 @@ def build_prompt(task_type, prompt_args, master_dict_path):
     metadata_tokens = []
     
     if task_type == "emopia":
-        # Example: prompt_args = {"mood": "happy"}
-        mood_map = {"happy": "<emo_q2>", "sad": "<emo_q1>", "angry": "<emo_q3>", "calm": "<emo_q4>"}
-        token_name = mood_map.get(prompt_args.get("mood", "happy"), "<emo_q2>")
+        # Ground-Truth EMOPIA Quadrants: Q1=Happy/Excited, Q2=Angry/Tense, Q3=Sad/Depressed, Q4=Calm/Serene
+        mood_map = {
+            "happy": "<emo_q1>", "heroic": "<emo_q1>", "excited": "<emo_q1>", "q1": "<emo_q1>",
+            "angry": "<emo_q2>", "tension": "<emo_q2>", "dark": "<emo_q2>", "q2": "<emo_q2>",
+            "sad": "<emo_q3>", "melancholy": "<emo_q3>", "grief": "<emo_q3>", "q3": "<emo_q3>",
+            "calm": "<emo_q4>", "peaceful": "<emo_q4>", "tender": "<emo_q4>", "q4": "<emo_q4>",
+        }
+        token_name = mood_map.get(prompt_args.get("mood", "happy").lower(), "<emo_q1>")
         metadata_tokens.append(master_dict[token_name])
         
     elif task_type == "slakh":
