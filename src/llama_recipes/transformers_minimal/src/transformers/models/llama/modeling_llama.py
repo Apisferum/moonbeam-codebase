@@ -979,7 +979,7 @@ class LlamaSdpaAttention(LlamaAttention):
         query_states_dur, key_states_dur = apply_rotary_pos_emb(query_states_split[:,1,:,:,:], key_states_split[:,1,:,:,:], cos_dur, sin_dur) #apply to head group 1
         query_states_octave, key_states_octave = apply_rotary_pos_emb(query_states_split[:,2,:,:,:], key_states_split[:,2,:,:,:], cos_octave, sin_octave)
         query_states_pitch, key_states_pitch = apply_rotary_pos_emb(query_states_split[:,3,:,:,:], key_states_split[:,3,:,:,:], cos_pitch, sin_pitch) #apply to head group 3
-        query_states_instr, key_states_instr = apply_rotary_pos_emb(query_states_split[:,4,:,:,:], key_states_split[:,4,:,:,:], cos_onset, sin_onset) #apply to head group 4
+        query_states_instr, key_states_instr = query_states_split[:,4,:,:,:], key_states_split[:,4,:,:,:] # categorical instrument tokens (unrotated, not rotated by onset)
         query_states_velocity, key_states_velocity = apply_rotary_pos_emb(query_states_split[:,5,:,:,:], key_states_split[:,5,:,:,:], cos_velocity, sin_velocity) #apply to head group 5
 
         query_states = torch.cat((query_states_onset, query_states_dur, query_states_octave, query_states_pitch, query_states_instr, query_states_velocity), dim = 1) #concat all the heads
@@ -2272,41 +2272,41 @@ class LlamaForCausalLM_Conditional_Generation(LlamaPreTrainedModel):
                     
                     metadata_condition_shrinked = self.gru_condition_layer(metadata_condition_embedded_single).unsqueeze(1) #(len, 11*dim) --> (len, dim) --> len, 1, dim
                     metadata_condition_list.append(metadata_condition_shrinked)
-            if self.if_add_chord_in_decoder:
-                bbc_slice = bar_beat_chord_condition[batch_idx, : seq_indices_eos - seq_indices_sos]
-                bar_OH = F.one_hot(bbc_slice[:, 0].long(), num_classes=self.bar_classes).to(input_ids)
-                beat_OH = F.one_hot(bbc_slice[:, 1].long(), num_classes=self.beat_classes).to(input_ids)
-                
-                # 🚀 GOD-TIER VECTORIZATION: Eliminate the Python for-loop over chords
-                chord_indices = bbc_slice[:, 2].long()
-                unique_chords = torch.unique(chord_indices)
-                
-                chord_embed_map = {}
-                zero_tensor_gpu = torch.tensor([0], device=input_ids.device)
-                if self.chord_placeholder_embedding.weight.device != zero_tensor_gpu.device:
-                    self.chord_placeholder_embedding.to(zero_tensor_gpu.device)
+                if self.if_add_chord_in_decoder:
+                    bbc_slice = bar_beat_chord_condition[batch_idx, : seq_indices_eos - seq_indices_sos]
+                    bar_OH = F.one_hot(bbc_slice[:, 0].long(), num_classes=self.bar_classes).to(input_ids)
+                    beat_OH = F.one_hot(bbc_slice[:, 1].long(), num_classes=self.beat_classes).to(input_ids)
                     
-                for c_idx in unique_chords:
-                    c_val = c_idx.item()
-                    chord_sym = self.chord_idx2symbol[c_val]
-                    if chord_sym != "s":
-                        midi_pitches = self._chord_midi_cache[chord_sym].to(input_ids.device)
-                        emb = self.model.pitch_embedding(midi_pitches.unsqueeze(0)).sum(dim=1).squeeze(0)
-                    else:
-                        emb = self.chord_placeholder_embedding(zero_tensor_gpu).squeeze(0)
-                    chord_embed_map[c_val] = emb
+                    # 🚀 GOD-TIER VECTORIZATION: Eliminate the Python for-loop over chords
+                    chord_indices = bbc_slice[:, 2].long()
+                    unique_chords = torch.unique(chord_indices)
                     
-                max_idx = int(chord_indices.max().item()) + 1
-                embed_dim = list(chord_embed_map.values())[0].shape[-1]
-                lookup_table = torch.zeros(max_idx, embed_dim, device=input_ids.device, dtype=input_ids.dtype)
-                for c_val, emb in chord_embed_map.items():
-                    lookup_table[c_val] = emb
+                    chord_embed_map = {}
+                    zero_tensor_gpu = torch.tensor([0], device=input_ids.device)
+                    if self.chord_placeholder_embedding.weight.device != zero_tensor_gpu.device:
+                        self.chord_placeholder_embedding.to(zero_tensor_gpu.device)
+                        
+                    for c_idx in unique_chords:
+                        c_val = c_idx.item()
+                        chord_sym = self.chord_idx2symbol[c_val]
+                        if chord_sym != "s":
+                            midi_pitches = self._chord_midi_cache[chord_sym].to(input_ids.device)
+                            emb = self.model.pitch_embedding(midi_pitches.unsqueeze(0)).sum(dim=1).squeeze(0)
+                        else:
+                            emb = self.chord_placeholder_embedding(zero_tensor_gpu).squeeze(0)
+                        chord_embed_map[c_val] = emb
+                        
+                    max_idx = int(chord_indices.max().item()) + 1
+                    embed_dim = list(chord_embed_map.values())[0].shape[-1]
+                    lookup_table = torch.zeros(max_idx, embed_dim, device=input_ids.device, dtype=input_ids.dtype)
+                    for c_val, emb in chord_embed_map.items():
+                        lookup_table[c_val] = emb
+                        
+                    chord_condition_cat = lookup_table[chord_indices]
                     
-                chord_condition_cat = lookup_table[chord_indices]
-                
-                bar_beat_chord_condition_cat = torch.cat([bar_OH, beat_OH, chord_condition_cat], dim = -1)
-                bar_beat_chord_condition_cat_linear = self.chord_condition_layer(bar_beat_chord_condition_cat).unsqueeze(1)
-                bar_beat_chord_condition_list.append(bar_beat_chord_condition_cat_linear)
+                    bar_beat_chord_condition_cat = torch.cat([bar_OH, beat_OH, chord_condition_cat], dim = -1)
+                    bar_beat_chord_condition_cat_linear = self.chord_condition_layer(bar_beat_chord_condition_cat).unsqueeze(1)
+                    bar_beat_chord_condition_list.append(bar_beat_chord_condition_cat_linear)
 
                 logits_list.append(logits_between_sos_eos)
                 labels_list.append(labels_between_sos_eos)

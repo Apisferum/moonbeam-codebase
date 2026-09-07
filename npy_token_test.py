@@ -7,7 +7,12 @@ import glob
 # Dataset root
 # ============================================================
 
-DATASET_ROOT = "/home/aashishbishow/ProjectX/Moonbeam Multi-Task Data"
+local_data_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Moonbeam Multi-Task Data"))
+if os.path.exists(local_data_path):
+    DATASET_ROOT = local_data_path
+else:
+    DATASET_ROOT = os.environ.get("MOONBEAM_DATASET_ROOT", "/home/aashishbishow/ProjectX/Moonbeam Multi-Task Data")
+
 
 
 def scan_dataset(folder_name, folder_path):
