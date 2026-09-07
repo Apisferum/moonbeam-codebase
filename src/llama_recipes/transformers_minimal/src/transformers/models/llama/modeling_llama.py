@@ -939,14 +939,14 @@ class LlamaSdpaAttention(LlamaAttention):
         if not hasattr(self, "_pos_tensor_cache"):
             self._pos_tensor_cache = {}
             # Pre-cache SOS, EOS, and default fallback tensors on the correct device and dtype
-            self._pos_tensor_cache["sos"] = torch.zeros(6, device=hidden_states.device, dtype=position_ids.dtype)
-            self._pos_tensor_cache["eos"] = torch.full((6,), 2**15, device=hidden_states.device, dtype=position_ids.dtype)
-            self._pos_tensor_cache["default"] = torch.zeros(6, device=hidden_states.device, dtype=position_ids.dtype)
+            self._pos_tensor_cache["sos"] = torch.zeros((1, 1, 6), device=hidden_states.device, dtype=position_ids.dtype)
+            self._pos_tensor_cache["eos"] = torch.full((1, 1, 6), 2**15, device=hidden_states.device, dtype=position_ids.dtype)
+            self._pos_tensor_cache["default"] = torch.zeros((1, 1, 6), device=hidden_states.device, dtype=position_ids.dtype)
             
             # Pre-cache all metadata position maps from the dictionary
             if additional_tokens_pos_map is not None:
                 for t_id, pos_list in additional_tokens_pos_map.items():
-                    self._pos_tensor_cache[str(t_id)] = torch.tensor(pos_list, device=hidden_states.device, dtype=position_ids.dtype)
+                    self._pos_tensor_cache[str(t_id)] = torch.tensor(pos_list, device=hidden_states.device, dtype=position_ids.dtype).view(1, 1, 6)
         # --------------------------------------------------------------------------
 
         where_sos = (position_ids[..., 0] == self.config.sos_token).unsqueeze(-1) #only check the onset dimension
