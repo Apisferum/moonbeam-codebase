@@ -53,8 +53,8 @@ def main(
     # 2. Build Prompt Metadata
     metadata_ids = []
     if task_type == "emopia":
-        # Example: Happy = <emo_q2>
-        metadata_ids = [master_dict["<emo_q2>"]] 
+        # Example: Happy = <emo_q1> (EMOPIA Q1: High Valence, High Arousal)
+        metadata_ids = [master_dict["<emo_q1>"]] 
     elif task_type == "slakh":
         # Example: Full Orchestra + Strings + Brass
         metadata_ids = [
